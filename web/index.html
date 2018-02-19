@@ -1,0 +1,25 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <title>Websockets Forwarder</title>
+    <meta http-equiv='Content-Type' content='text/html; charset=utf-8' />
+    <link rel="stylesheet" href="https://unpkg.com/alertifyjs@1.11.0/build/css/alertify.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/alertifyjs@1.11.0/build/css/themes/default.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/xterm@3.1.0/dist/xterm.css" />
+  </head>
+  <body>
+    <div>
+      <input id="connection_input" type="text" placeholder="ws(s)://..." />
+      <input id="port_input" type="text" placeholder="PROTOCOL:PORT" />
+      <input id="action_button" type="button" value="Start" />
+    </div>
+
+    <div id="terminal"></div>
+
+    <script type="text/javascript" src="https://unpkg.com/wolfy87-eventemitter@5.2.4/EventEmitter.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/alertifyjs@1.11.0/build/alertify.min.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/xterm@3.1.0/dist/xterm.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/xterm@3.1.0/dist/addons/attach/attach.js"></script>
+    <script type="text/javascript" src="/app.js"></script>
+  </body>
+</html>
