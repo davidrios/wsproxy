@@ -1,25 +1,13 @@
 <!DOCTYPE HTML>
 <html>
   <head>
-    <title>Websockets Forwarder</title>
+    <title>Websockets Proxy</title>
     <meta http-equiv='Content-Type' content='text/html; charset=utf-8' />
-    <link rel="stylesheet" href="https://unpkg.com/alertifyjs@1.11.0/build/css/alertify.min.css" />
-    <link rel="stylesheet" href="https://unpkg.com/alertifyjs@1.11.0/build/css/themes/default.min.css" />
   </head>
   <body>
-    <div>
-      <input id="connection_input" type="text" placeholder="ws(s)://..." />
-      <input id="port_input" type="text" placeholder="PROTOCOL:PORT" />
-      <input id="action_button" type="button" value="Start" />
-    </div>
-
-    <div>
-      <p><pre style="max-height: 400px; overflow: scroll"><code id="response_display"></code></pre></p>
-      <label><input id="send_input" type="text" placeholder="text to send" readonly /> Type and press [Shift] Enter</label>
-    </div>
-
-    <script type="text/javascript" src="https://unpkg.com/wolfy87-eventemitter@5.2.4/EventEmitter.js"></script>
-    <script type="text/javascript" src="https://unpkg.com/alertifyjs@1.11.0/build/alertify.min.js"></script>
-    <script type="text/javascript" src="/app.js"></script>
+    <h1>Available apps</h1>
+    <ul>
+      <li><a href="/app_interact.html">Interactor</a>: Connect to a socket and visually send and receive data.</li>
+    </ul>
   </body>
 </html>

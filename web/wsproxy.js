@@ -1,11 +1,11 @@
 'use strict';
 
-(function() {
-  class WSForwarder extends EventEmitter {
-    constructor(wsServer, forwardPort) {
+(function(exports) {
+  class WSProxy extends EventEmitter {
+    constructor(wsServer, proxyPort) {
       super();
       this.wsServer = wsServer;
-      this.forwardPort = forwardPort;
+      this.proxyPort = proxyPort;
       this.state = 'stopped';
     }
 
@@ -25,7 +25,7 @@
       }
 
       this.webSocket.onopen = (ev) => {
-        this.webSocket.send(this.forwardPort);
+        this.webSocket.send(this.proxyPort);
       }
 
       this.webSocket.onmessage = (ev) => {
@@ -82,65 +82,40 @@
     }
   }
 
-  class WSForwarderComponent {
-    constructor(connectionInput, portInput, actionButton, responseDisplayElement, sendInput) {
+  class WSProxyComponent extends EventEmitter {
+    constructor(connectionInput, portInput, actionButton) {
+      super();
+
       this.connectionInput = connectionInput;
       this.portInput = portInput;
       this.actionButton = actionButton;
-      this.responseDisplayElement = responseDisplayElement;
-      this.sendInput = sendInput;
 
-      this.wsForwarder = null;
+      this.wsProxy = null;
       this.state = 'stopped';
 
       actionButton.addEventListener('click', (ev) => {
         this.act();
       });
-
-      sendInput.addEventListener('keypress', (ev) => {
-        if (ev.key !== 'Enter' || ev.target.hasAttribute('readonly')) {
-          return;
-        }
-
-        let text = this.sendInput.value;
-        if (!ev.shiftKey) {
-          text += '\n';
-        }
-
-        this.wsForwarder.getSocket().send(new Blob([text]));
-
-        this.sendInput.value = '';
-      })
     }
 
     start() {
+      this.emitEvent('starting');
       this.state = 'starting';
       this.actionButton.disabled = true;
       this.connectionInput.setAttribute('readonly', true);
       this.portInput.setAttribute('readonly', true);
       alertify.message('Starting...');
 
-      this.wsForwarder = new WSForwarder(this.connectionInput.value, this.portInput.value);
-      this.wsForwarder.addListener('running', () => {
+      this.wsProxy = new WSProxy(this.connectionInput.value, this.portInput.value);
+      this.wsProxy.addListener('running', () => {
         this.setRunning();
-        this.responseDisplayElement.innerHTML = '';
-        this.sendInput.focus();
-
-        this.wsForwarder.getSocket().onmessage = (ev) => {
-          let fr = new FileReader();
-          fr.onload = (ev) => {
-            this.responseDisplayElement.insertAdjacentText('beforeend', ev.target.result);
-            this.responseDisplayElement.parentElement.scrollTop = 0xFFFFFF;
-          }
-          fr.readAsText(ev.data);
-        }
       });
 
-      this.wsForwarder.addListener('stopped', () => {
+      this.wsProxy.addListener('stopped', () => {
         this.setStopped();
       });
 
-      this.wsForwarder.addListener('error', (error) => {
+      this.wsProxy.addListener('error', (error) => {
         switch (error) {
           case 'invalid_connection':
             alertify.error('Invalid connection string.');
@@ -168,23 +143,23 @@
         }
       });
 
-      this.wsForwarder.start();
+      this.wsProxy.start();
     }
 
     setRunning() {
       this.actionButton.disabled = false;
       this.actionButton.value = 'Stop';
-      this.sendInput.removeAttribute('readonly');
       this.state = 'running';
       alertify.success('Running.');
+      this.emitEvent('running');
     }
 
     stop() {
+      this.emitEvent('stop');
       this.state = 'stopping';
       this.actionButton.disabled = true;
-      this.sendInput.setAttribute('readonly', true);
       alertify.message('Stopping...');
-      this.wsForwarder.stop();
+      this.wsProxy.stop();
     }
 
     setStopped() {
@@ -192,13 +167,13 @@
       this.actionButton.value = 'Start';
       this.connectionInput.removeAttribute('readonly');
       this.portInput.removeAttribute('readonly');
-      this.sendInput.setAttribute('readonly', true);
 
-      this.wsForwarder.removeEvent();
-      this.wsForwarder = null;
+      this.wsProxy.removeEvent();
+      this.wsProxy = null;
 
       this.state = 'stopped';
       alertify.message('Stopped.');
+      this.emitEvent('stopped');
     }
 
     act() {
@@ -212,13 +187,16 @@
           break;
       }
     }
+
+    getSocket() {
+      if (this.state !== 'running') {
+        throw new Error('not running');
+      }
+
+      return this.wsProxy.getSocket();
+    }
   }
 
-  new WSForwarderComponent(
-    document.getElementById('connection_input'),
-    document.getElementById('port_input'),
-    document.getElementById('action_button'),
-    document.getElementById('response_display'),
-    document.getElementById('send_input')
-  );
-})();
+  exports.WSProxy = WSProxy;
+  exports.WSProxyComponent = WSProxyComponent;
+})(window);
