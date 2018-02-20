@@ -130,7 +130,7 @@
           let fr = new FileReader();
           fr.onload = (ev) => {
             this.responseDisplayElement.insertAdjacentText('beforeend', ev.target.result);
-            this.responseDisplayElement.parentElement.scrollTop = 99999;
+            this.responseDisplayElement.parentElement.scrollTop = 0xFFFFFF;
           }
           fr.readAsText(ev.data);
         }
