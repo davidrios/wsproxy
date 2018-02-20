@@ -16,7 +16,7 @@ async def handle_client2(loop, client_reader, client_writer):
                 data = await client_reader.read(4096)
             except ConnectionResetError:
                 return
-            # print('read: ', data)
+            print('read: ', data)
             await queue.put(data)
 
             if not data:

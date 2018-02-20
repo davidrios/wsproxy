@@ -1,8 +1,6 @@
 'use strict';
 
 (function() {
-  Terminal.applyAddon(attach);
-
   class WSForwarder extends EventEmitter {
     constructor(wsServer, forwardPort) {
       super();
@@ -20,7 +18,7 @@
       try {
         this.webSocket = new WebSocket(this.wsServer);
       }
-      catch {
+      catch(err) {
         this.emitEvent('error', ['invalid_connection']);
         this.forceStop();
         return;
@@ -31,11 +29,9 @@
       }
 
       this.webSocket.onmessage = (ev) => {
-        console.log(ev.data);
-        
         switch (ev.data) {
           case 'SUCCESS':
-            // this.webSocket.onmessage = null;
+            this.webSocket.onmessage = null;
             this.state = 'running';
             this.emitEvent('running');
             break;
@@ -45,9 +41,14 @@
             this.forceStop();
             break;
 
+          case 'SERVICE_UNAVAILABLE':
+            this.emitEvent('error', ['service_unavailable']);
+            this.forceStop();
+            break;
+
           default:
-            // this.emitEvent('error', ['unknown_message']);
-            // this.webSocket.close();
+            this.emitEvent('error', ['unknown_message']);
+            this.webSocket.close();
             break;
         }
       }
@@ -82,11 +83,12 @@
   }
 
   class WSForwarderComponent {
-    constructor(connectionInput, portInput, actionButton, terminalElement) {
+    constructor(connectionInput, portInput, actionButton, responseDisplayElement, sendInput) {
       this.connectionInput = connectionInput;
       this.portInput = portInput;
       this.actionButton = actionButton;
-      this.terminalElement = terminalElement;
+      this.responseDisplayElement = responseDisplayElement;
+      this.sendInput = sendInput;
 
       this.wsForwarder = null;
       this.state = 'stopped';
@@ -95,8 +97,20 @@
         this.act();
       });
 
-      this.terminal = new Terminal();
-      this.terminal.open(terminalElement);
+      sendInput.addEventListener('keypress', (ev) => {
+        if (ev.key !== 'Enter' || ev.target.hasAttribute('readonly')) {
+          return;
+        }
+
+        let text = this.sendInput.value;
+        if (!ev.shiftKey) {
+          text += '\n';
+        }
+
+        this.wsForwarder.getSocket().send(new Blob([text]));
+
+        this.sendInput.value = '';
+      })
     }
 
     start() {
@@ -109,7 +123,17 @@
       this.wsForwarder = new WSForwarder(this.connectionInput.value, this.portInput.value);
       this.wsForwarder.addListener('running', () => {
         this.setRunning();
-        this.terminal.attach(this.wsForwarder.getSocket());
+        this.responseDisplayElement.innerHTML = '';
+        this.sendInput.focus();
+
+        this.wsForwarder.getSocket().onmessage = (ev) => {
+          let fr = new FileReader();
+          fr.onload = (ev) => {
+            this.responseDisplayElement.insertAdjacentText('beforeend', ev.target.result);
+            this.responseDisplayElement.parentElement.scrollTop = 99999;
+          }
+          fr.readAsText(ev.data);
+        }
       });
 
       this.wsForwarder.addListener('stopped', () => {
@@ -130,6 +154,10 @@
             alertify.error('Server said the specified PROTOCOL:PORT is invalid.');
             break;
 
+          case 'service_unavailable':
+            alertify.error('Server said the specified PROTOCOL:PORT is unavailable.');
+            break;
+
           case 'unexpected_message':
             alertify.error('Server sent an unexpected message.');
             break;
@@ -146,6 +174,7 @@
     setRunning() {
       this.actionButton.disabled = false;
       this.actionButton.value = 'Stop';
+      this.sendInput.removeAttribute('readonly');
       this.state = 'running';
       alertify.success('Running.');
     }
@@ -153,6 +182,7 @@
     stop() {
       this.state = 'stopping';
       this.actionButton.disabled = true;
+      this.sendInput.setAttribute('readonly', true);
       alertify.message('Stopping...');
       this.wsForwarder.stop();
     }
@@ -162,8 +192,11 @@
       this.actionButton.value = 'Start';
       this.connectionInput.removeAttribute('readonly');
       this.portInput.removeAttribute('readonly');
+      this.sendInput.setAttribute('readonly', true);
+
       this.wsForwarder.removeEvent();
       this.wsForwarder = null;
+
       this.state = 'stopped';
       alertify.message('Stopped.');
     }
@@ -185,6 +218,7 @@
     document.getElementById('connection_input'),
     document.getElementById('port_input'),
     document.getElementById('action_button'),
-    document.getElementById('terminal')
+    document.getElementById('response_display'),
+    document.getElementById('send_input')
   );
 })();

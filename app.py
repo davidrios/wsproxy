@@ -2,6 +2,7 @@ import asyncio
 import logging
 import ssl
 
+import aiojobs
 from aiohttp import web, WSMsgType, WSCloseCode
 
 log = logging.getLogger(__name__)
@@ -12,78 +13,100 @@ class InvalidPortError(Exception):
 
 
 class Proxy(object):
-    def __init__(self, ws_writer, protocol, port, loop):
+    def __init__(self, ws, protocol, port, loop):
         if protocol != 'TCP':
             raise NotImplementedError
 
-        self._ws_writer = ws_writer
+        self._ws = ws
         self._protocol = protocol
         self._port = port
         self._loop = loop
         self._left_queue = asyncio.Queue(4096)
         self._right_queue = asyncio.Queue(4096)
+        self._started = False
 
     async def start(self):
-        self._right_reader, self._right_writer = await asyncio.open_connection('localhost', self._port, loop=self._loop)
-        self._tasks = []
-        self._tasks.append(self._loop.create_task(self._left_writer_worker()))
-        self._tasks.append(self._loop.create_task(self._right_reader_worker()))
-        self._tasks.append(self._loop.create_task(self._right_writer_worker()))
+        if self._started:
+            raise Exception('already started')
+
+        reader, writer = await asyncio.open_connection('localhost', self._port, loop=self._loop)
+        self._right_reader = reader
+        self._right_writer = writer
+        self._scheduler = await aiojobs.create_scheduler()
+
+        await self._scheduler.spawn(self._left_writer_worker())
+        await self._scheduler.spawn(self._right_reader_worker())
+        await self._scheduler.spawn(self._right_writer_worker())
+
+        self._started = True
 
     async def feed_left(self, data):
+        if not self._started:
+            raise Exception('not started yet')
+
         await self._left_queue.put(data)
 
         if not data:
-            self.shutdown()
+            await self.shutdown()
             return
 
-    def shutdown(self):
-        # client_writer.transport.abort()
+    async def shutdown(self):
+        if not self._started:
+            return
+
         self._right_writer.transport.abort()
+        await self._ws.close()
+        await self._scheduler.close()
 
     async def _left_writer_worker(self):
-        while True:
-            data = await self._right_queue.get()
-            if not data:
-                self.shutdown()
-                return
+        try:
+            while True:
+                data = await self._right_queue.get()
+                if not data:
+                    await self.shutdown()
+                    return
 
-            try:
-                await self._ws_writer(data)
-            except Exception:
-                self.shutdown()
-                log.exception()
-                return
+                await self._ws.send_bytes(data)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            await self.shutdown()
+            log.exception('left writer error')
+            return
 
     async def _right_reader_worker(self):
-        while True:
-            try:
+        try:
+            while True:
                 data = await self._right_reader.read(4096)
-            except Exception:
-                self.shutdown()
-                log.exception()
-                return
 
-            await self._right_queue.put(data)
+                await self._right_queue.put(data)
 
-            if not data:
-                self.shutdown()
-                return
+                if not data:
+                    await self.shutdown()
+                    return
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            await self.shutdown()
+            log.exception('right reader error')
+            return
 
     async def _right_writer_worker(self):
-        while True:
-            data = await self._left_queue.get()
-            if not data:
-                self.shutdown()
-                return
+        try:
+            while True:
+                data = await self._left_queue.get()
+                if not data:
+                    await self.shutdown()
+                    return
 
-            self._right_writer.write(data)
-            try:
+                self._right_writer.write(data)
                 await self._right_writer.drain()
-            except Exception:
-                self.shutdown()
-                log.exception()
-                return
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            await self.shutdown()
+            log.exception('right writer error')
+            return
 
 
 class WSHandler(object):
@@ -114,47 +137,44 @@ class WSHandler(object):
         proxy = None
 
         try:
-            first_message = False
-            used_port = None
+            first_message = await ws.receive_str()
+
+            try:
+                used_port = WSHandler.parse_port(first_message)
+            except InvalidPortError:
+                await ws.send_str('INVALID_PORT')
+                await ws.close()
+                return ws
+
+            if used_port not in self._forward_ports:
+                await ws.send_str('INVALID_PORT')
+                await ws.close()
+                return ws
+
+            log.debug('Received request to forward {}'.format(used_port))
+
+            proxy = Proxy(ws, used_port[0], used_port[1], self._loop)
+            try:
+                await proxy.start()
+            except Exception:
+                log.exception('error starting proxy:')
+                await ws.send_str('SERVICE_UNAVAILABLE')
+                await ws.close()
+                return ws
+
+            await ws.send_str('SUCCESS')
 
             async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    if not first_message:
-                        try:
-                            used_port = WSHandler.parse_port(msg.data)
-                        except InvalidPortError:
-                            await ws.send_str('INVALID_PORT')
-                            await ws.close()
-                            return ws
-
-                        if used_port not in self._forward_ports:
-                            await ws.send_str('INVALID_PORT')
-                            await ws.close()
-                            return ws
-
-                        log.debug('Received request to forward {}'.format(used_port))
-
-                        proxy = Proxy(ws, used_port[0], used_port[1], self._loop)
-                        try:
-                            await proxy.start()
-                        except Exception:
-                            log.exception()
-                            await ws.send_str('CONNECTION_FAILED')
-                            await ws.close()
-                            return ws
-
-                        await ws.send_str('SUCCESS')
-                        first_message = True
-
-                        continue
-
+                if msg.type == WSMsgType.BINARY:
                     await proxy.feed_left(msg.data)
-
                 elif msg.type == WSMsgType.ERROR:
                     log.warn('websocket connection closed with exception %s', ws.exception())
+                else:
+                    await ws.close()
+                    return ws
         finally:
             if proxy is not None:
-                proxy.shutdown()
+                await proxy.shutdown()
 
             self._ws_connections.remove(ws)
 
