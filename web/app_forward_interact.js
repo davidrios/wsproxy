@@ -16,22 +16,13 @@
   startButton.addEventListener('click', function() {
     peerConnection = peer.connect(peerIdInput.value);
 
-    // workaround for no close event on firefox
-    let interval;
-    interval = setInterval(() => {
-      if (!peerConnection.open) {
-        clearInterval(interval);
-        peerIdInput.removeAttribute('readonly');
-        startButton.removeAttribute('disabled');
-        sendInput.setAttribute('readonly', true);
-        alertify.error('Connection closed');
-      }
-    }, 1000);
-
     peerIdInput.setAttribute('readonly', true);
     startButton.setAttribute('disabled', true);
-    sendInput.removeAttribute('readonly');
-    sendInput.focus();
+
+    peerConnection.on('open', () => {
+      sendInput.removeAttribute('readonly');
+      sendInput.focus();
+    });
 
     responseDisplayElement.innerHTML = '';
 
@@ -39,6 +30,13 @@
       let text = (new TextDecoder()).decode(data);
       responseDisplayElement.insertAdjacentText('beforeend', text);
       responseDisplayElement.parentElement.scrollTop = 0xFFFFFF;
+    });
+
+    peerConnection.on('close', () => {
+      peerIdInput.removeAttribute('readonly');
+      startButton.removeAttribute('disabled');
+      sendInput.setAttribute('readonly', true);
+      alertify.error('Connection closed');
     });
 
     alertify.success('Connection started');
