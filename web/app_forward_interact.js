@@ -9,11 +9,15 @@
   let peerConnection;
   let peer = new Peer({key: 'peerjs', host: 'peerserver.ressonancia.tech', port: 9000});
 
+  alertify.message('Connecting to peer server');
+
   peer.on('open', (id) => {
     startButton.removeAttribute('disabled');
+    alertify.success('Connected');
   });
 
   startButton.addEventListener('click', function() {
+    alertify.message('Connecting to WebRTC peer');
     peerConnection = peer.connect(peerIdInput.value);
 
     peerIdInput.setAttribute('readonly', true);
@@ -22,6 +26,7 @@
     peerConnection.on('open', () => {
       sendInput.removeAttribute('readonly');
       sendInput.focus();
+      alertify.success('Connected')
     });
 
     responseDisplayElement.innerHTML = '';
@@ -38,8 +43,6 @@
       sendInput.setAttribute('readonly', true);
       alertify.error('Connection closed');
     });
-
-    alertify.success('Connection started');
   });
 
   sendInput.addEventListener('keypress', (ev) => {
