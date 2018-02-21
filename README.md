@@ -27,6 +27,8 @@ is probably capable on handling it.
         $ python app.py --help
 
 
+### Example configuration
+
 For example, run a simple local echo server with ncat on port 20010:
 
     $ ncat -l 20010 --keep-open --exec "/bin/cat"
