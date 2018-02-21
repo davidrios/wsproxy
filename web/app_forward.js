@@ -1,7 +1,7 @@
 'use strict';
 
 (function() {
-  let peer = new Peer('testecho', {key: 'peerjs', host: 'peerserver.ressonancia.tech', port: 9000});
+  let peer = new Peer({key: 'peerjs', host: 'peerserver.ressonancia.tech', port: 9000});
   let peerConnection;
   let wsp;
 
