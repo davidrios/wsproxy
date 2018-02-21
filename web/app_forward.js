@@ -5,55 +5,79 @@
   let peerConnection;
   let wsp;
 
-  let wsBuffer;
-  let rtcBuffer;
-
-  function flushWSBuffer() {
-    if (!peerConnection || !peerConnection.open || !wsBuffer.length) {
-      return;
-    }
-
-    peerConnection.send(wsBuffer.shift());
-  }
-
-  function flushRTCBuffer() {
-    if (!wsp || wsp.state !== 'running' || !rtcBuffer.length) {
-      return;
-    }
-
-    wsp.getSocket().send(rtcBuffer.shift());
-  }
-
-  function setupFlusher(func) {
-    let interval = setInterval(func, 1);
-    return () => { clearInterval(interval) };
-  }
-
   function setupWSProxy(protocol, port) {
     let wsp = new WSProxy(protocol, port);
-    let flushStopper;
+    let firstData = true;
+    let interval;
+    let wsBuffer;
 
     wsp.addListener('running', () => {
       alertify.success('WSProxy started');
+
       wsBuffer = new Array();
 
       wsp.getSocket().onmessage = (ev) => {
-        wsBuffer.push(ev.data);
-      }
+        if (firstData) {
+          wsBuffer.push(ev.data);
+          firstData = false;
 
-      flushStopper = setupFlusher(flushWSBuffer);
+          // setup an initial buffer to fill while the WebRTC data channel is not established
+          interval = setInterval(() => {
+            if (!peerConnection || !peerConnection.open) {
+              return;
+            }
+
+            if (!wsBuffer.length) {
+              clearInterval(interval);
+              return;
+            }
+
+            for (let i = 0; i < wsBuffer.length; i++) {
+              peerConnection.send(wsBuffer.shift());
+            }
+          }, 1)
+
+          return;
+        }
+
+        if (wsBuffer.length) {
+          wsBuffer.push(ev.data);
+          return;
+        }
+
+        peerConnection.send(ev.data);
+      }
     });
 
     wsp.addListener('stopped', () => {
-      if (peerConnection) {
-        peerConnection.peerConnection.close();
-      }
-
-      if (flushStopper) {
-        flushStopper();
-      }
-
       alertify.message('WSProxy stopped');
+
+      function done() {
+        if (peerConnection) {
+          peerConnection.peerConnection.close();
+        }
+
+        clearInterval(interval);
+
+        alertify.message('All done, closing WebRTC connection');
+      }
+
+      if (wsBuffer.length) {
+        alertify.message('Flushing WSProxy buffer before closing WebRTC connection');
+
+        let myInterval = setInterval(() => {
+          if (wsBuffer.length) {
+            return;
+          }
+
+          clearInterval(myInterval);
+          done();
+        }, 1);
+
+        return;
+      }
+
+      done();
     });
 
     wsp.addListener('error', (error) => {
@@ -120,7 +144,6 @@
       }
 
       peerConnection = conn;
-      // rtcBuffer = new Array();
 
       wsp = setupWSProxy(
         document.getElementById('connection_input').value,
@@ -134,17 +157,10 @@
         wsp.getSocket().send(new Blob([text]));
       });
 
-      // flushStopper = setupFlusher(flushRTCBuffer);
-
-      // workaround for no close event on firefox
-      let interval;
-      interval = setInterval(() => {
-        if (!peerConnection.open) {
-          // flushStopper();
-          wsp.stop();
-          clearInterval(interval);
-        }
-      }, 1000);
+      peerConnection.on('close', () => {
+        alertify.error('WebRTC connection closed');
+        wsp.stop();
+      })
     });
   });
 })();
